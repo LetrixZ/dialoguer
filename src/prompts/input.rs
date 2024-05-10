@@ -53,7 +53,7 @@ type InputValidatorCallback<'a, T> = Arc<Mutex<dyn FnMut(&T) -> Option<String> +
 #[derive(Clone)]
 pub struct Input<'a, T> {
     prompt: String,
-    post_completion_text: Option<String>,
+    post_completion_closure: Option<Arc<dyn Fn(&String, &String) -> String + 'a>>,
     report: bool,
     default: Option<T>,
     show_default: bool,
@@ -86,8 +86,11 @@ impl<T> Input<'_, T> {
     }
 
     /// Changes the prompt text to the post completion text after input is complete
-    pub fn with_post_completion_text<S: Into<String>>(mut self, post_completion_text: S) -> Self {
-        self.post_completion_text = Some(post_completion_text.into());
+    pub fn with_post_completion_text<F>(mut self, post_completion_closure: F) -> Self
+    where
+        F: Fn(&String, &String) -> String + 'static,
+    {
+        self.post_completion_closure = Some(Arc::new(post_completion_closure));
         self
     }
 
@@ -152,7 +155,7 @@ impl<'a, T> Input<'a, T> {
     pub fn with_theme(theme: &'a dyn Theme) -> Self {
         Self {
             prompt: "".into(),
-            post_completion_text: None,
+            post_completion_closure: None,
             report: true,
             default: None,
             show_default: true,
@@ -606,8 +609,11 @@ where
                     }
 
                     if self.report {
-                        if let Some(post_completion_text) = &self.post_completion_text {
-                            render.input_prompt_selection(post_completion_text, &input)?;
+                        if let Some(post_completion_closure) = &self.post_completion_closure {
+                            render.input_prompt_selection(
+                                &post_completion_closure(&input, &self.prompt),
+                                &input,
+                            )?;
                         } else {
                             render.input_prompt_selection(&self.prompt, &input)?;
                         }
